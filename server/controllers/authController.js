@@ -59,7 +59,6 @@ export const register = async (req, res) => {
       await sendEmail(welcomeEmail);
     } catch (error) {
       console.log('Email could not be sent', error);
-      // Continue even if email fails - don't block registration
     }
     
     res.status(201).json({
@@ -80,39 +79,32 @@ export const register = async (req, res) => {
 // Login user
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    // Check if email and password are provided
-    if (!email || !password) {
-      return res.status(400).json({
-        message: 'Please provide email and password'
-      });
+    const { username, password } = req.body;
+    
+    // Check if username and password exist
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Please provide username and password' });
     }
-
-    // Find user by email and explicitly select the password
-    const user = await User.findOne({ email }).select('+password');
-
-    // Check if user exists
+    
+    // Find user and include password field
+    const user = await User.findOne({ username }).select('+password');
+    
     if (!user) {
-      return res.status(401).json({
-        message: 'Invalid credentials'
-      });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
-
-    // Check if password matches
+    
+    // Check password
     const isMatch = await user.matchPassword(password);
     if (!isMatch) {
-      return res.status(401).json({
-        message: 'Invalid credentials'
-      });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
-
+    
     // Generate token
     const token = generateToken(user._id);
-
+    
     // Remove password from output
     user.password = undefined;
-
+    
     res.status(200).json({
       success: true,
       token,
@@ -130,7 +122,12 @@ export const login = async (req, res) => {
 // Get current user
 export const getCurrentUser = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(req.userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
     res.status(200).json({
       success: true,
       user
