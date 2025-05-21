@@ -8,15 +8,17 @@ import BookingSuccess from './pages/BookingSuccess';
 import { useAuth } from './context/AuthContext';
 
 function App() {
-  const { isAuthenticated } = useAuth();
+  // Temporarily bypass authentication
+  const isAuthenticated = true;
+  const { user } = useAuth();
 
   return (
     <Routes>
       <Route path="/" element={<Welcome />} />
-      <Route path="/signin" element={!isAuthenticated ? <SignIn /> : <Navigate to="/booking" />} />
-      <Route path="/signup" element={!isAuthenticated ? <SignUp /> : <Navigate to="/booking" />} />
-      <Route path="/booking" element={isAuthenticated ? <Booking /> : <Navigate to="/signin" />} />
-      <Route path="/booking-success" element={isAuthenticated ? <BookingSuccess /> : <Navigate to="/signin" />} />
+      <Route path="/signin" element={<Navigate to="/booking" />} />
+      <Route path="/signup" element={<Navigate to="/booking" />} />
+      <Route path="/booking" element={<Booking />} />
+      <Route path="/booking-success" element={<BookingSuccess />} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
