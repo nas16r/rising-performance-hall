@@ -34,6 +34,9 @@ export const register = async (req, res) => {
       password
     });
     
+    // Generate token for the new user
+    const token = generateToken(user._id);
+    
     // Remove password from output
     user.password = undefined;
     
@@ -62,65 +65,13 @@ export const register = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
-      user
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: 'Server error during registration',
-      error: error.message
-    });
-  }
-};
-
-// Login user
-export const login = async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    
-    // Check if username and password exist
-    if (!username || !password) {
-      return res.status(400).json({ message: 'Please provide username and password' });
-    }
-    
-    // Find user
-    const user = await User.findOne({ username }).select('+password');
-    
-    if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({ message: 'Invalid credentials' });
-    }
-    
-    // Generate token
-    const token = generateToken(user._id);
-    
-    // Remove password from output
-    user.password = undefined;
-    
-    res.status(200).json({
-      success: true,
       token,
       user
     });
   } catch (error) {
+    console.error('Registration error:', error);
     res.status(500).json({
-      message: 'Server error during login',
-      error: error.message
-    });
-  }
-};
-
-// Get current user
-export const getCurrentUser = async (req, res) => {
-  try {
-    const user = await User.findById(req.userId);
-    
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-    
-    res.status(200).json(user);
-  } catch (error) {
-    res.status(500).json({
-      message: 'Server error while fetching user',
+      message: error.message || 'Server error during registration',
       error: error.message
     });
   }

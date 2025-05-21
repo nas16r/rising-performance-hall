@@ -31,8 +31,10 @@ app.get('/', (req, res) => {
   res.send('Rising Performance Hall API is running');
 });
 
+const MONGODB_URI = 'mongodb+srv://Risinghall:hall12345678@cluster0.eh11shf.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+
 // Connect to MongoDB and start server
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/rising-performance-hall')
+mongoose.connect(MONGODB_URI)
   .then(() => {
     console.log('Connected to MongoDB');
     app.listen(PORT, () => {
