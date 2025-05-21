@@ -17,12 +17,6 @@ interface BookingFormData {
   duration: number;
 }
 
-interface BookedSlot {
-  date: string;
-  startTime: string;
-  endTime: string;
-}
-
 const Booking: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -36,29 +30,9 @@ const Booking: React.FC = () => {
   
   const [errors, setErrors] = useState<Partial<BookingFormData & { general: string }>>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [bookedSlots, setBookedSlots] = useState<BookedSlot[]>([]);
   const [endTime, setEndTime] = useState<string>('');
 
   useEffect(() => {
-    // Fetch booked slots
-    const fetchBookedSlots = async () => {
-      try {
-        const response = await axios.get(`${API_URL}/bookings/slots`, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`
-          }
-        });
-        setBookedSlots(response.data);
-      } catch (error) {
-        toast.error('Failed to fetch booked slots');
-      }
-    };
-    
-    fetchBookedSlots();
-  }, []);
-
-  useEffect(() => {
-    // Calculate end time whenever start time or duration changes
     if (formData.startTime && formData.duration) {
       const endTimeDate = addHours(formData.startTime, formData.duration);
       setEndTime(format(endTimeDate, 'h:mm a'));
@@ -71,7 +45,7 @@ const Booking: React.FC = () => {
     setFormData((prev) => ({
       ...prev,
       date,
-      startTime: null // Reset start time when date changes
+      startTime: null
     }));
     
     if (errors.date) {
@@ -96,7 +70,6 @@ const Booking: React.FC = () => {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
     
-    // Clear error on change
     if (errors[name as keyof typeof errors]) {
       setErrors((prev) => ({ ...prev, [name]: undefined }));
     }
@@ -121,16 +94,6 @@ const Booking: React.FC = () => {
       newErrors.duration = `Minimum booking duration is ${MIN_BOOKING_HOURS} hour`;
     }
     
-    // Check if the end time exceeds closing time
-    if (formData.startTime && formData.duration) {
-      const endTimeDate = addHours(formData.startTime, formData.duration);
-      const endTimeHour = endTimeDate.getHours();
-      
-      if (endTimeHour > CLOSING_HOUR || (endTimeHour === CLOSING_HOUR && endTimeDate.getMinutes() > 0)) {
-        newErrors.duration = `Booking can't extend beyond ${CLOSING_HOUR}:00`;
-      }
-    }
-    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -144,7 +107,7 @@ const Booking: React.FC = () => {
     
     try {
       const bookingData = {
-        userId: user?._id,
+        userId: user?._id || 'guest',
         eventName: formData.eventName,
         date: formData.date,
         startTime: formData.startTime,
@@ -165,43 +128,6 @@ const Booking: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Filter out booked dates/times
-  const isDateDisabled = (date: Date) => {
-    // Don't allow past dates
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    return date < today;
-  };
-
-  // Filter available time slots based on booked slots
-  const filterTime = (time: Date) => {
-    const hour = time.getHours();
-    
-    // Only allow times within opening hours
-    if (hour < OPENING_HOUR || hour >= CLOSING_HOUR) {
-      return false;
-    }
-    
-    // Check if the selected date and time slot is already booked
-    if (formData.date) {
-      const dateString = format(formData.date, 'yyyy-MM-dd');
-      
-      const isSlotBooked = bookedSlots.some(slot => {
-        if (slot.date !== dateString) return false;
-        
-        const slotStartHour = parseInt(slot.startTime.split(':')[0]);
-        const slotEndHour = parseInt(slot.endTime.split(':')[0]);
-        
-        return hour >= slotStartHour && hour < slotEndHour;
-      });
-      
-      return !isSlotBooked;
-    }
-    
-    return true;
   };
 
   const getTimeOptions = () => {
@@ -251,7 +177,6 @@ const Booking: React.FC = () => {
                 <DatePicker
                   selected={formData.date}
                   onChange={handleDateChange}
-                  filterDate={isDateDisabled}
                   minDate={new Date()}
                   placeholderText="Select a date"
                   className={`form-input ${errors.date ? 'border-danger' : ''}`}
@@ -275,7 +200,6 @@ const Booking: React.FC = () => {
                   dateFormat="h:mm aa"
                   placeholderText="Select start time"
                   className={`form-input ${errors.startTime ? 'border-danger' : ''}`}
-                  filterTime={filterTime}
                   includeTimes={getTimeOptions()}
                   disabled={!formData.date}
                 />
