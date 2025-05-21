@@ -76,3 +76,70 @@ export const register = async (req, res) => {
     });
   }
 };
+
+// Login user
+export const login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Check if email and password are provided
+    if (!email || !password) {
+      return res.status(400).json({
+        message: 'Please provide email and password'
+      });
+    }
+
+    // Find user by email and explicitly select the password
+    const user = await User.findOne({ email }).select('+password');
+
+    // Check if user exists
+    if (!user) {
+      return res.status(401).json({
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Check if password matches
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) {
+      return res.status(401).json({
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Generate token
+    const token = generateToken(user._id);
+
+    // Remove password from output
+    user.password = undefined;
+
+    res.status(200).json({
+      success: true,
+      token,
+      user
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      message: error.message || 'Server error during login',
+      error: error.message
+    });
+  }
+};
+
+// Get current user
+export const getCurrentUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    res.status(200).json({
+      success: true,
+      user
+    });
+  } catch (error) {
+    console.error('Get current user error:', error);
+    res.status(500).json({
+      message: error.message || 'Server error while fetching user data',
+      error: error.message
+    });
+  }
+};
