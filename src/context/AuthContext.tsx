@@ -1,110 +1,110 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import axios from 'axios';
-import { API_URL } from '../config';
+import { createContext, useContext, useState, useEffect } from "react";
+import { supabase } from "../lib/supabase";
+import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 
-interface User {
-  _id: string;
-  name: string;
+type User = {
+  id: string;
   email: string;
-  username: string;
-}
+} | null;
 
-interface AuthContextType {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  login: (username: string, password: string) => Promise<void>;
-  register: (userData: RegisterData) => Promise<void>;
-  logout: () => void;
-}
-
-interface RegisterData {
-  name: string;
-  email: string;
-  phone: string;
-  username: string;
-  password: string;
-}
+type AuthContextType = {
+  user: User;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-export const AuthProvider = ({ children }: AuthProviderProps) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const token = localStorage.getItem('token');
-      
-      if (token) {
-        try {
-          const response = await axios.get(`${API_URL}/auth/me`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          
-          setUser(response.data);
-        } catch (error) {
-          localStorage.removeItem('token');
-          setUser(null);
-        }
+    // Check active sessions and sets the user
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+        });
       }
-      
-      setIsLoading(false);
-    };
-    
-    checkAuth();
+    });
+
+    // Listen for changes on auth state (signed in, signed out, etc.)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+        });
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = async (username: string, password: string) => {
+  const signUp = async (email: string, password: string) => {
     try {
-      const response = await axios.post(`${API_URL}/auth/login`, { username, password });
-      const { token, user } = response.data;
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
       
-      localStorage.setItem('token', token);
-      setUser(user);
-    } catch (error) {
-      throw error;
+      if (error) throw error;
+      
+      toast.success("Registration successful! Please sign in.");
+      navigate("/signin");
+    } catch (error: any) {
+      toast.error(error.message);
     }
   };
 
-  const register = async (userData: RegisterData) => {
+  const signIn = async (email: string, password: string) => {
     try {
-      const response = await axios.post(`${API_URL}/auth/register`, userData);
-      return response.data;
-    } catch (error) {
-      throw error;
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (error) throw error;
+      
+      toast.success("Successfully signed in!");
+      navigate("/");
+    } catch (error: any) {
+      toast.error(error.message);
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    setUser(null);
+  const signOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      setUser(null);
+      toast.success("Successfully signed out!");
+      navigate("/signin");
+    } catch (error: any) {
+      toast.error(error.message);
+    }
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated: !!user,
-        isLoading,
-        login,
-        register,
-        logout
-      }}
-    >
+    <AuthContext.Provider value={{ user, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );
-};
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+}
