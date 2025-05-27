@@ -1,0 +1,105 @@
+/*
+  # Bookings table and policies
+
+  1. New Tables
+    - `bookings` table for storing event bookings
+      - `id` (uuid, primary key)
+      - `user_id` (uuid, references auth.users)
+      - `event_name` (text)
+      - `date` (date)
+      - `start_time` (timestamptz)
+      - `end_time` (timestamptz)
+      - `duration` (integer)
+      - `status` (text)
+      - `created_at` (timestamptz)
+
+  2. Security
+    - Enable RLS on `bookings` table
+    - Add policies for authenticated users to:
+      - Create their own bookings
+      - Read their own bookings
+      - Update their own bookings
+
+  3. Functions
+    - Add `check_booking_availability` function
+*/
+
+CREATE TABLE IF NOT EXISTS bookings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users,
+  event_name text NOT NULL,
+  date date NOT NULL,
+  start_time timestamptz NOT NULL,
+  end_time timestamptz NOT NULL,
+  duration integer NOT NULL CHECK (duration > 0),
+  status text NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'pending', 'cancelled')),
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
+
+DO $$ 
+BEGIN
+  -- Create insert policy if it doesn't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE tablename = 'bookings' 
+    AND policyname = 'Users can create their own bookings'
+  ) THEN
+    CREATE POLICY "Users can create their own bookings"
+      ON bookings
+      FOR INSERT
+      TO authenticated
+      WITH CHECK (auth.uid() = user_id);
+  END IF;
+
+  -- Create select policy if it doesn't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE tablename = 'bookings' 
+    AND policyname = 'Users can read their own bookings'
+  ) THEN
+    CREATE POLICY "Users can read their own bookings"
+      ON bookings
+      FOR SELECT
+      TO authenticated
+      USING (auth.uid() = user_id);
+  END IF;
+
+  -- Create update policy if it doesn't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE tablename = 'bookings' 
+    AND policyname = 'Users can update their own bookings'
+  ) THEN
+    CREATE POLICY "Users can update their own bookings"
+      ON bookings
+      FOR UPDATE
+      TO authenticated
+      USING (auth.uid() = user_id)
+      WITH CHECK (auth.uid() = user_id);
+  END IF;
+END $$;
+
+-- Drop function if it exists to avoid "function already exists" error
+DROP FUNCTION IF EXISTS check_booking_availability;
+
+-- Create booking availability check function
+CREATE OR REPLACE FUNCTION check_booking_availability(
+  check_date date,
+  check_start_time timestamptz,
+  check_end_time timestamptz
+) RETURNS boolean AS $$
+BEGIN
+  RETURN NOT EXISTS (
+    SELECT 1 FROM bookings
+    WHERE date = check_date
+    AND status = 'confirmed'
+    AND (
+      (start_time <= check_start_time AND end_time > check_start_time)
+      OR (start_time < check_end_time AND end_time >= check_end_time)
+      OR (start_time >= check_start_time AND end_time <= check_end_time)
+    )
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
