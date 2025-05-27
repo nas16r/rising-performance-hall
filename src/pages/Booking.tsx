@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
-import { CalendarClock, Clock, CalendarDays } from 'lucide-react';
+import { CalendarClock, Clock, CalendarDays, User, Mail, Phone } from 'lucide-react';
 import { format, addHours, setHours, setMinutes } from 'date-fns';
 import { supabase } from '../lib/supabase';
 import Navbar from '../components/Navbar';
@@ -14,6 +14,9 @@ interface BookingFormData {
   date: Date | null;
   startTime: Date | null;
   duration: number;
+  name: string;
+  email: string;
+  phone: string;
 }
 
 const Booking: React.FC = () => {
@@ -24,6 +27,9 @@ const Booking: React.FC = () => {
     date: null,
     startTime: null,
     duration: MIN_BOOKING_HOURS,
+    name: '',
+    email: '',
+    phone: ''
   });
   
   const [errors, setErrors] = useState<Partial<BookingFormData & { general: string }>>({});
@@ -52,7 +58,16 @@ const Booking: React.FC = () => {
   };
 
   const handleStartTimeChange = (time: Date | null) => {
-    setFormData((prev) => ({ ...prev, startTime: time }));
+    if (time && formData.date) {
+      // Combine the selected date with the selected time
+      const combinedDateTime = new Date(formData.date);
+      combinedDateTime.setHours(time.getHours());
+      combinedDateTime.setMinutes(time.getMinutes());
+      
+      setFormData((prev) => ({ ...prev, startTime: combinedDateTime }));
+    } else {
+      setFormData((prev) => ({ ...prev, startTime: time }));
+    }
     
     if (errors.startTime) {
       setErrors((prev) => ({ ...prev, startTime: undefined }));
@@ -80,6 +95,20 @@ const Booking: React.FC = () => {
       newErrors.eventName = 'Event name is required';
     }
     
+    if (!formData.name.trim()) {
+      newErrors.name = 'Name is required';
+    }
+    
+    if (!formData.email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'Invalid email format';
+    }
+    
+    if (!formData.phone.trim()) {
+      newErrors.phone = 'Phone number is required';
+    }
+    
     if (!formData.date) {
       newErrors.date = 'Date is required';
     }
@@ -104,8 +133,23 @@ const Booking: React.FC = () => {
     setIsLoading(true);
     
     try {
+      // First, sign up the user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: Math.random().toString(36).slice(-8), // Generate a random password
+        options: {
+          data: {
+            name: formData.name,
+            phone: formData.phone
+          }
+        }
+      });
+
+      if (authError) throw authError;
+
       const endTimeDate = addHours(formData.startTime!, formData.duration);
       
+      // Then create the booking
       const { data, error } = await supabase
         .from('bookings')
         .insert([
@@ -115,7 +159,7 @@ const Booking: React.FC = () => {
             start_time: formData.startTime?.toISOString(),
             end_time: endTimeDate.toISOString(),
             duration: formData.duration,
-            user_id: (await supabase.auth.getUser()).data.user?.id
+            user_id: authData.user?.id
           }
         ])
         .select()
@@ -133,11 +177,18 @@ const Booking: React.FC = () => {
   };
 
   const getTimeOptions = () => {
+    if (!formData.date) return [];
+
     const options = [];
+    const selectedDate = new Date(formData.date);
     const now = new Date();
+    const isToday = selectedDate.toDateString() === now.toDateString();
     
-    for (let i = OPENING_HOUR; i <= CLOSING_HOUR - MIN_BOOKING_HOURS; i++) {
-      const timeOption = setHours(setMinutes(now, 0), i);
+    // If booking for today, only show future times
+    const startHour = isToday ? Math.max(OPENING_HOUR, now.getHours() + 1) : OPENING_HOUR;
+    
+    for (let hour = startHour; hour <= CLOSING_HOUR - MIN_BOOKING_HOURS; hour++) {
+      const timeOption = setHours(setMinutes(selectedDate, 0), hour);
       options.push(timeOption);
     }
     
@@ -156,86 +207,147 @@ const Booking: React.FC = () => {
           </div>
           
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="eventName" className="form-label">Event Name</label>
-              <input
-                type="text"
-                id="eventName"
-                name="eventName"
-                value={formData.eventName}
-                onChange={handleChange}
-                className={`form-input ${errors.eventName ? 'border-danger' : ''}`}
-                placeholder="Enter your event name"
-              />
-              {errors.eventName && <p className="form-error">{errors.eventName}</p>}
-            </div>
-            
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="date" className="form-label flex items-center gap-1">
-                  <CalendarDays size={16} />
-                  Select Date
-                </label>
-                <DatePicker
-                  selected={formData.date}
-                  onChange={handleDateChange}
-                  minDate={new Date()}
-                  placeholderText="Select a date"
-                  className={`form-input ${errors.date ? 'border-danger' : ''}`}
-                  dateFormat="MMMM d, yyyy"
-                />
-                {errors.date && <p className="form-error">{errors.date}</p>}
-              </div>
+            {/* Personal Information */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-gray-800">Personal Information</h2>
               
               <div>
-                <label htmlFor="startTime" className="form-label flex items-center gap-1">
-                  <Clock size={16} />
-                  Start Time
+                <label htmlFor="name" className="form-label flex items-center gap-1">
+                  <User size={16} />
+                  Your Name
                 </label>
-                <DatePicker
-                  selected={formData.startTime}
-                  onChange={handleStartTimeChange}
-                  showTimeSelect
-                  showTimeSelectOnly
-                  timeIntervals={60}
-                  timeCaption="Time"
-                  dateFormat="h:mm aa"
-                  placeholderText="Select start time"
-                  className={`form-input ${errors.startTime ? 'border-danger' : ''}`}
-                  includeTimes={getTimeOptions()}
-                  disabled={!formData.date}
-                />
-                {errors.startTime && <p className="form-error">{errors.startTime}</p>}
-              </div>
-            </div>
-            
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="duration" className="form-label flex items-center gap-1">
-                  <CalendarClock size={16} />
-                  Duration (hours)
-                </label>
-                <select
-                  id="duration"
-                  name="duration"
-                  value={formData.duration}
+                <input
+                  type="text"
+                  id="name"
+                  name="name"
+                  value={formData.name}
                   onChange={handleChange}
-                  className={`form-input ${errors.duration ? 'border-danger' : ''}`}
-                  disabled={!formData.startTime}
-                >
-                  {[...Array(MAX_BOOKING_HOURS + 1 - MIN_BOOKING_HOURS)].map((_, i) => (
-                    <option key={i} value={i + MIN_BOOKING_HOURS}>
-                      {i + MIN_BOOKING_HOURS} hour{i + MIN_BOOKING_HOURS > 1 ? 's' : ''}
-                    </option>
-                  ))}
-                </select>
-                {errors.duration && <p className="form-error">{errors.duration}</p>}
+                  className={`form-input ${errors.name ? 'border-danger' : ''}`}
+                  placeholder="Enter your full name"
+                />
+                {errors.name && <p className="form-error">{errors.name}</p>}
               </div>
+
+              <div>
+                <label htmlFor="email" className="form-label flex items-center gap-1">
+                  <Mail size={16} />
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  className={`form-input ${errors.email ? 'border-danger' : ''}`}
+                  placeholder="Enter your email"
+                />
+                {errors.email && <p className="form-error">{errors.email}</p>}
+              </div>
+
+              <div>
+                <label htmlFor="phone" className="form-label flex items-center gap-1">
+                  <Phone size={16} />
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  id="phone"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  className={`form-input ${errors.phone ? 'border-danger' : ''}`}
+                  placeholder="Enter your phone number"
+                />
+                {errors.phone && <p className="form-error">{errors.phone}</p>}
+              </div>
+            </div>
+
+            {/* Event Details */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-gray-800">Event Details</h2>
               
               <div>
-                <label className="form-label">End Time</label>
-                <div className="form-input bg-gray-50 flex items-center">
-                  {endTime || 'Select start time first'}
+                <label htmlFor="eventName" className="form-label">Event Name</label>
+                <input
+                  type="text"
+                  id="eventName"
+                  name="eventName"
+                  value={formData.eventName}
+                  onChange={handleChange}
+                  className={`form-input ${errors.eventName ? 'border-danger' : ''}`}
+                  placeholder="Enter your event name"
+                />
+                {errors.eventName && <p className="form-error">{errors.eventName}</p>}
+              </div>
+              
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="date" className="form-label flex items-center gap-1">
+                    <CalendarDays size={16} />
+                    Select Date
+                  </label>
+                  <DatePicker
+                    selected={formData.date}
+                    onChange={handleDateChange}
+                    minDate={new Date()}
+                    placeholderText="Select a date"
+                    className={`form-input ${errors.date ? 'border-danger' : ''}`}
+                    dateFormat="MMMM d, yyyy"
+                  />
+                  {errors.date && <p className="form-error">{errors.date}</p>}
+                </div>
+                
+                <div>
+                  <label htmlFor="startTime" className="form-label flex items-center gap-1">
+                    <Clock size={16} />
+                    Start Time
+                  </label>
+                  <DatePicker
+                    selected={formData.startTime}
+                    onChange={handleStartTimeChange}
+                    showTimeSelect
+                    showTimeSelectOnly
+                    timeIntervals={60}
+                    timeCaption="Time"
+                    dateFormat="h:mm aa"
+                    placeholderText="Select start time"
+                    className={`form-input ${errors.startTime ? 'border-danger' : ''}`}
+                    includeTimes={getTimeOptions()}
+                    disabled={!formData.date}
+                  />
+                  {errors.startTime && <p className="form-error">{errors.startTime}</p>}
+                </div>
+              </div>
+              
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="duration" className="form-label flex items-center gap-1">
+                    <CalendarClock size={16} />
+                    Duration (hours)
+                  </label>
+                  <select
+                    id="duration"
+                    name="duration"
+                    value={formData.duration}
+                    onChange={handleChange}
+                    className={`form-input ${errors.duration ? 'border-danger' : ''}`}
+                    disabled={!formData.startTime}
+                  >
+                    {[...Array(MAX_BOOKING_HOURS + 1 - MIN_BOOKING_HOURS)].map((_, i) => (
+                      <option key={i} value={i + MIN_BOOKING_HOURS}>
+                        {i + MIN_BOOKING_HOURS} hour{i + MIN_BOOKING_HOURS > 1 ? 's' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.duration && <p className="form-error">{errors.duration}</p>}
+                </div>
+                
+                <div>
+                  <label className="form-label">End Time</label>
+                  <div className="form-input bg-gray-50 flex items-center">
+                    {endTime || 'Select start time first'}
+                  </div>
                 </div>
               </div>
             </div>
