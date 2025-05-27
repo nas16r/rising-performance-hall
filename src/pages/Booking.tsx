@@ -4,11 +4,10 @@ import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { CalendarClock, Clock, CalendarDays } from 'lucide-react';
 import { format, addHours, setHours, setMinutes } from 'date-fns';
-import axios from 'axios';
-import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import Navbar from '../components/Navbar';
 import toast from 'react-hot-toast';
-import { API_URL, OPENING_HOUR, CLOSING_HOUR, MIN_BOOKING_HOURS, MAX_BOOKING_HOURS } from '../config';
+import { OPENING_HOUR, CLOSING_HOUR, MIN_BOOKING_HOURS, MAX_BOOKING_HOURS } from '../config';
 
 interface BookingFormData {
   eventName: string;
@@ -19,7 +18,6 @@ interface BookingFormData {
 
 const Booking: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   
   const [formData, setFormData] = useState<BookingFormData>({
     eventName: '',
@@ -106,25 +104,29 @@ const Booking: React.FC = () => {
     setIsLoading(true);
     
     try {
-      const bookingData = {
-        userId: user?._id || 'guest',
-        eventName: formData.eventName,
-        date: formData.date,
-        startTime: formData.startTime,
-        duration: formData.duration,
-      };
+      const endTimeDate = addHours(formData.startTime!, formData.duration);
       
-      await axios.post(`${API_URL}/bookings`, bookingData, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`
-        }
-      });
+      const { data, error } = await supabase
+        .from('bookings')
+        .insert([
+          {
+            event_name: formData.eventName,
+            date: format(formData.date!, 'yyyy-MM-dd'),
+            start_time: formData.startTime?.toISOString(),
+            end_time: endTimeDate.toISOString(),
+            duration: formData.duration,
+            user_id: (await supabase.auth.getUser()).data.user?.id
+          }
+        ])
+        .select()
+        .single();
+      
+      if (error) throw error;
       
       toast.success('Booking created successfully!');
       navigate('/booking-success');
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || 'Failed to create booking';
-      toast.error(errorMessage);
+      toast.error(error.message || 'Failed to create booking');
     } finally {
       setIsLoading(false);
     }
